@@ -1,13 +1,13 @@
-package ru.volkfm.chatty;
+package ru.volkfm.chattskiy;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class ChattyApplication {
+public class ChattskiyApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(ChattyApplication.class, args);
+		SpringApplication.run(ChattskiyApplication.class, args);
 	}
 
 }

@@ -1,10 +1,10 @@
-package ru.volkfm.chatty;
+package ru.volkfm.chattskiy;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class ChattyApplicationTests {
+class ChattskiyApplicationTests {
 
 	@Test
 	void contextLoads() {
