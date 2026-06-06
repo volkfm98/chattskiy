@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres
+    env_file:
+    - postgres.env
+    - postgres.secret.env
+  redis:
+    image: redis
+  cassandra:
+    image: cassandra
+  kafka:
+    image: apache/kafka
+  app:
+    build: ../
