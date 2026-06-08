@@ -12,7 +12,7 @@ import lombok.Setter;
         use = JsonTypeInfo.Id.NAME,
         property = "type")
 @JsonSubTypes({
-        @Type(value = MessageEvent.class, name = "message")
+        @Type(value = MessageEvent.class, name = "MESSAGE")
 })
 public abstract class Event {
     private EventType type;
