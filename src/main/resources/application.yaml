@@ -1,3 +1,7 @@
 spring:
   application:
     name: Chattskiy
+  kafka:
+    bootstrap-servers:
+#      - "kafka:9092"
+      - "localhost:29092"
