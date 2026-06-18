@@ -2,6 +2,7 @@ package ru.volkfm.chattskiy.handler;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketHandler;
 import org.springframework.web.reactive.socket.WebSocketMessage;
@@ -14,15 +15,18 @@ import ru.volkfm.chattskiy.model.event.EventType;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
 @Log
 public class ChatWsHandler implements WebSocketHandler {
+    public final static String BEAN_CHAT_WS_EVENT_HANDLER_MAP = "ChatWsEventHandlerMapBean";
+
     private final ObjectMapper objectMapper;
-    private final Map<EventType, EventHandler> eventHandlerMap = new HashMap<>(); // ToDo: make it more configurable
+
+    @Qualifier(BEAN_CHAT_WS_EVENT_HANDLER_MAP)
+    private final Map<EventType, EventHandler> eventHandlerMap;
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
@@ -30,7 +34,7 @@ public class ChatWsHandler implements WebSocketHandler {
         var eventPipeline = session.receive()
                 .flatMap(this::handleWsEvent)
                 .map(object -> session.textMessage(objectMapper.writeValueAsString(object)))
-                .doFinally(sig -> log.info("sig_type: %s, That's it folks!".formatted(sig.name()))); // ToDo: basic flow - store to cassandra, return ack
+                .doFinally(sig -> log.info("sig_type: %s, That's it folks!".formatted(sig.name())));
 
         Flux<WebSocketMessage> ping = getPingFlux(session, Duration.ofSeconds(30));
 
@@ -47,14 +51,14 @@ public class ChatWsHandler implements WebSocketHandler {
             return objectMapper.readValue(wsMsg.getPayloadAsText(), Event.class);
     }
 
-    protected Flux<Object> handleWsEvent(WebSocketMessage wsMsg) {
+    protected Flux<Event> handleWsEvent(WebSocketMessage wsMsg) {
         log.info("ws_type: %s, raw_data: %s".formatted(wsMsg.getType().name(), wsMsg.getPayloadAsText()));
 
         switch (wsMsg.getType()) {
             case WebSocketMessage.Type.TEXT -> {
                 Event event = getEventFromWsMessage(wsMsg);
-                // eventHandlerMap.get(event.getType()).handle(event);
-                return Flux.just(event);
+
+                return delegateEventHandling(event);
             }
             case WebSocketMessage.Type.PONG -> {
                 log.info("ws_type: %s, PING PONG".formatted(wsMsg.getType().name()));
@@ -63,6 +67,10 @@ public class ChatWsHandler implements WebSocketHandler {
         }
 
         return Flux.empty(); // Stub
+    }
+
+    protected Flux<Event> delegateEventHandling(Event event) {
+        return eventHandlerMap.get(event.getType()).handle(event);
     }
 
     protected Flux<WebSocketMessage> getPingFlux(WebSocketSession session, Duration pingInterval) {
