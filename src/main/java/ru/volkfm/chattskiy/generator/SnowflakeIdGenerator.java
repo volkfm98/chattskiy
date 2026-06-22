@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 import java.util.concurrent.atomic.AtomicLong;
 
 @RequiredArgsConstructor
-public class SnowflakeIdGenerator {
+public class SnowflakeIdGenerator implements LongIdGenerator {
     protected static final int TIMESTAMP_LENGTH = 41;
     protected static final int NODE_ID_LENGTH = 10;
     protected static final int SEQUENCE_ID_LENGTH = 12;
@@ -16,6 +16,7 @@ public class SnowflakeIdGenerator {
 
     private Long lastTimestamp = System.currentTimeMillis();
 
+    @Override
     public synchronized Long generateId() {
         Long timestamp = System.currentTimeMillis();
 
