@@ -6,6 +6,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.UUID;
+
 @Getter
 @Setter
 @JsonTypeInfo(
@@ -15,5 +17,6 @@ import lombok.Setter;
         @Type(value = MessageEvent.class, name = "MESSAGE")
 })
 public abstract class Event {
-    private EventType type;
+    protected UUID eventId;
+    protected EventType type;
 }

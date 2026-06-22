@@ -10,6 +10,6 @@ import java.time.ZonedDateTime;
 public class MessageEvent extends Event {
     private String userId;
     private String chatId;
-    private String message;
+    private String content;
     private ZonedDateTime timestamp;
 }

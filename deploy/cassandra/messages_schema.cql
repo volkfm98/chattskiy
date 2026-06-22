@@ -3,9 +3,8 @@ CREATE KEYSPACE IF NOT EXISTS chattskiy WITH REPLICATION = { 'class' : 'SimpleSt
 CREATE TABLE IF NOT EXISTS chattskiy.message (
     chat_id UUID,
     message_id BIGINT,
-    sender UUID,
+    user_id UUID,
     content TEXT,
-    batch_counter INT,
     created_at TIMESTAMP,
     PRIMARY KEY ( chat_id, message_id )
 )
