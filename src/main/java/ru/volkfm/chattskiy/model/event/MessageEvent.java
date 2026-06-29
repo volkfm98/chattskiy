@@ -7,9 +7,6 @@ import java.time.ZonedDateTime;
 
 @Getter
 @Setter
-public class MessageEvent extends Event {
-    private String userId;
-    private String chatId;
+public class MessageEvent extends PublishableEvent {
     private String content;
-    private ZonedDateTime timestamp;
 }

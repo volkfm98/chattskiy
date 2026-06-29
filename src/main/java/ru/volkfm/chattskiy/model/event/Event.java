@@ -14,7 +14,8 @@ import java.util.UUID;
         use = JsonTypeInfo.Id.NAME,
         property = "type")
 @JsonSubTypes({
-        @Type(value = MessageEvent.class, name = "MESSAGE")
+        @Type(value = MessageEvent.class, name = "MESSAGE"),
+        @Type(value = AckEvent.class, name = "ACK")
 })
 public abstract class Event {
     protected UUID eventId;

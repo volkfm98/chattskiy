@@ -66,7 +66,7 @@ public class ChatWsHandler implements WebSocketHandler {
             }
         }
 
-        return Flux.empty(); // Stub
+        return Flux.empty();
     }
 
     protected Flux<Event> delegateEventHandling(Event event) {
@@ -75,7 +75,7 @@ public class ChatWsHandler implements WebSocketHandler {
 
     protected Flux<WebSocketMessage> getPingFlux(WebSocketSession session, Duration pingInterval) {
         return Flux.interval(pingInterval)
-                .map(i -> session.pingMessage(f -> {
+                .map(_ -> session.pingMessage(f -> {
                     log.info("Sending ping");
                     return f.wrap(new byte[0]);
                 }));
