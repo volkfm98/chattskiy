@@ -1,16 +1,18 @@
 package ru.volkfm.chattskiy.handler.event;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import ru.volkfm.chattskiy.generator.LongIdGenerator;
 import ru.volkfm.chattskiy.mapper.MessageEventToEntityMapper;
 import ru.volkfm.chattskiy.model.event.AckEvent;
 import ru.volkfm.chattskiy.model.event.Event;
 import ru.volkfm.chattskiy.model.event.MessageEvent;
-import ru.volkfm.chattskiy.model.event.cassandra.Message;
+import ru.volkfm.chattskiy.model.data.cassandra.Message;
 import ru.volkfm.chattskiy.repository.cassandra.MessageRepository;
 import ru.volkfm.chattskiy.service.eventpublishing.RedisEventPublishingService;
 
+@Service
 @RequiredArgsConstructor
 public class MessageEventHandler implements EventHandler {
     private final RedisEventPublishingService eventPublisher;

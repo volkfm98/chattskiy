@@ -7,4 +7,4 @@ CREATE TABLE IF NOT EXISTS chattskiy.message (
     content TEXT,
     created_at TIMESTAMP,
     PRIMARY KEY ( chat_id, message_id )
-)
+);

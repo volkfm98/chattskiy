@@ -22,6 +22,7 @@ public class ApplicationConfig {
     @Bean(BEAN_CHAT_WS_EVENT_HANDLER_MAP)
     public Map<EventType, EventHandler> eventHandlerMap(MessageEventHandler messageEventHandler) {
         var eventHandlerMap = new HashMap<EventType, EventHandler>();
+        eventHandlerMap.put(EventType.MESSAGE, messageEventHandler);
 
         return eventHandlerMap;
     }

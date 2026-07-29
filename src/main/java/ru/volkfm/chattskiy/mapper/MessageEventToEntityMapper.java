@@ -4,7 +4,7 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.springframework.core.convert.converter.Converter;
 import ru.volkfm.chattskiy.model.event.MessageEvent;
-import ru.volkfm.chattskiy.model.event.cassandra.Message;
+import ru.volkfm.chattskiy.model.data.cassandra.Message;
 
 @Mapper(componentModel = "spring")
 public interface MessageEventToEntityMapper extends Converter<MessageEvent,Message> {

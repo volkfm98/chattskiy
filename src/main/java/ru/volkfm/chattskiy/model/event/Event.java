@@ -12,7 +12,8 @@ import java.util.UUID;
 @Setter
 @JsonTypeInfo(
         use = JsonTypeInfo.Id.NAME,
-        property = "type")
+        property = "type",
+        visible = true)
 @JsonSubTypes({
         @Type(value = MessageEvent.class, name = "MESSAGE"),
         @Type(value = AckEvent.class, name = "ACK")
