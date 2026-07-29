@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.volkfm.chattskiy.model.event.PublishableEvent;
+import ru.volkfm.chattskiy.repository.postgres.ChatRepository;
 import ru.volkfm.chattskiy.service.sessionregistry.GlobalSessionRegistryService;
 import tools.jackson.databind.ObjectMapper;
 
@@ -23,7 +24,7 @@ public class RedisEventPublishingService implements EventPublishingService {
     private final ObjectMapper objectMapper;
     private final ReactiveStringRedisTemplate redisTemplate;
     private final GlobalSessionRegistryService globalRegistry;
-    //    private final ChatRepository chatRepo;
+    private final ChatRepository chatRepo;
 
     @Getter
     @Setter
@@ -66,16 +67,16 @@ public class RedisEventPublishingService implements EventPublishingService {
     private Flux<String> getUserIds(UUID chatId) {
         return redisTemplate.opsForSet().members(chatId.toString())
                 .switchIfEmpty(
-                        chatRepo.findById(chatId).flux()
-                                .flatMap(chat ->
-                                    redisTemplate.opsForSet()
-                                            .add(chatId.toString(), chat.getUsers().toArray(new String[0]))
-                                            .doOnNext(_ -> redisTemplate.expire(chatId.toString(), Duration.ofMinutes(30)))
-                                            .then(chat.getUsers())
-                                )
+                        chatRepo.getUsers(chatId)
                                 .map(UUID::toString)
+                                .collectList()
+                                .flatMap(users ->
+                                        redisTemplate.opsForSet()
+                                                .add(chatId.toString(), users.toArray(String[]::new))
+                                                .flatMap(_ -> redisTemplate.expire(chatId.toString(), Duration.ofMinutes(30)))
+                                                .thenReturn(users)
+                                )
+                                .flatMapIterable(l -> l)
                 );
-
-        return Flux.empty();
     }
 }
