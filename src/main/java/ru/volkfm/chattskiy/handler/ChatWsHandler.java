@@ -1,7 +1,7 @@
 package ru.volkfm.chattskiy.handler;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.java.Log;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketHandler;
@@ -12,25 +12,31 @@ import reactor.core.publisher.Mono;
 import ru.volkfm.chattskiy.handler.event.EventHandler;
 import ru.volkfm.chattskiy.model.event.Event;
 import ru.volkfm.chattskiy.model.event.EventType;
+import ru.volkfm.chattskiy.service.sessionregistry.SessionRegistryService;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.UUID;
+
+import static ru.volkfm.chattskiy.config.WebSocketConfig.ATTRIBUTE_USER_ID_KEY;
 
 @Component
 @RequiredArgsConstructor
-@Log
+@Slf4j
 public class ChatWsHandler implements WebSocketHandler {
     public final static String BEAN_CHAT_WS_EVENT_HANDLER_MAP = "ChatWsEventHandlerMapBean";
 
     private final ObjectMapper objectMapper;
+    private final SessionRegistryService sessionRegistryService;
 
     @Qualifier(BEAN_CHAT_WS_EVENT_HANDLER_MAP)
     private final Map<EventType, EventHandler> eventHandlerMap;
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
-        log.info("New session begins");
+        var userId = (UUID) session.getHandshakeInfo().getAttributes().get(ATTRIBUTE_USER_ID_KEY);
+
         var eventPipeline = session.receive()
                 .flatMap(this::handleWsEvent)
                 .map(object -> session.textMessage(objectMapper.writeValueAsString(object)))
@@ -42,9 +48,14 @@ public class ChatWsHandler implements WebSocketHandler {
         Flux<WebSocketMessage> outsideEvents = Flux.range(0, 10).delayElements(Duration.ofSeconds(2))
                 .map(i -> session.textMessage("side event " + i));
 
-        return session.send(Flux.merge(ping, eventPipeline, outsideEvents)
-                .doOnError(t -> log.info(t.toString()))
-                .doFinally(sig -> log.info("sig_type: %s, sess ended".formatted(sig.name()))));
+        return Mono.usingWhen(sessionRegistryService.register(userId, this),
+                sessionId -> {
+                        log.info("Session %s begins".formatted(sessionId));
+                        return session.send(Flux.merge(ping, eventPipeline, outsideEvents)
+                                .doOnError(t -> log.info(t.toString()))
+                                .doFinally(sig -> log.info("sig_type: %s, sess ended".formatted(sig.name())))
+                        );},
+                sessionId -> sessionRegistryService.unregister(userId, sessionId));
     }
 
     protected Event getEventFromWsMessage(WebSocketMessage wsMsg) {

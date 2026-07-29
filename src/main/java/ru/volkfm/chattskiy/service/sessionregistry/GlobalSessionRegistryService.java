@@ -21,11 +21,13 @@ public class GlobalSessionRegistryService {
     public static final String nodeId = "1"; // ToDo: Refactor
 
     // Add to redis hash entry with TTL
-    public Mono<Boolean> register(UUID userId, String sessionId) {
+    public Mono<Void> register(UUID userId, String sessionId) {
         String key = userId.toString(); // ToDo: Adjust key
 
-        return redisTemplate.<String, String>opsForHash().put(key, sessionId, nodeId).doOnNext(_ ->
-            redisTemplate.<String, String>opsForHash().expire(key, Duration.ofSeconds(30), Collections.singleton(sessionId)) // ToDo: Adjust TTL
+        return redisTemplate.<String, String>opsForHash().put(key, sessionId, nodeId)
+                .flatMap(_ -> redisTemplate.<String, String>opsForHash()
+                        .expire(key, Duration.ofSeconds(30), Collections.singleton(sessionId))
+                .then()// ToDo: Adjust TTL
         );
     }
 

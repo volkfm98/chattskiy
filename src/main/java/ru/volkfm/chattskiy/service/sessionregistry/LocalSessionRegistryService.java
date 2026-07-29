@@ -2,7 +2,6 @@ package ru.volkfm.chattskiy.service.sessionregistry;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.socket.WebSocketHandler;
-import org.springframework.web.reactive.socket.WebSocketSession;
 
 import java.util.Map;
 import java.util.UUID;
@@ -12,17 +11,17 @@ import java.util.concurrent.ConcurrentHashMap;
 public class LocalSessionRegistryService {
     private final Map<UUID, Map<String, WebSocketHandler>> sessionRegistry = new ConcurrentHashMap<>();
 
-    public void register(UUID userId, WebSocketSession session, WebSocketHandler handler) {
+    public void register(UUID userId, String sessionId, WebSocketHandler handler) {
         sessionRegistry.putIfAbsent(userId, new ConcurrentHashMap<>());
-        sessionRegistry.get(userId).put(session.getId(), handler);
+        sessionRegistry.get(userId).put(sessionId, handler);
     }
 
-    public void unregister(UUID userId, WebSocketSession session) {
-        sessionRegistry.get(userId).remove(session.getId());
+    public void unregister(UUID userId, String sessionId) {
+        sessionRegistry.get(userId).remove(sessionId);
     }
 
-    public WebSocketHandler getSession(UUID userId, WebSocketSession session) {
-        return sessionRegistry.get(userId).get(session.getId());
+    public WebSocketHandler getSession(UUID userId, String sessionId) {
+        return sessionRegistry.get(userId).get(sessionId);
     }
 
     public Map<String, WebSocketHandler> getSessions(UUID userId) {
