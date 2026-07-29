@@ -14,6 +14,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
+import static ru.volkfm.chattskiy.constant.Redis.*;
+
 
 /**
  * Class, responsible for event publishing between nodes.
@@ -52,7 +54,7 @@ public class RedisEventPublishingService implements EventPublishingService {
                 .flatMap(ctx ->
                         getSubs(ctx.getChatParticipants())
                                 .flatMap(sub ->
-                                    redisTemplate.convertAndSend(sub, objectMapper.writeValueAsString(event))
+                                    redisTemplate.convertAndSend(NODE_KEY + ":" + sub, objectMapper.writeValueAsString(event))
                                 )
                                 .then()
                 );
@@ -65,15 +67,15 @@ public class RedisEventPublishingService implements EventPublishingService {
     }
 
     private Flux<String> getUserIds(UUID chatId) {
-        return redisTemplate.opsForSet().members(chatId.toString())
+        return redisTemplate.opsForSet().members(CHAT_KEY + ":" + chatId.toString())
                 .switchIfEmpty(
                         chatRepo.getUsers(chatId)
                                 .map(UUID::toString)
                                 .collectList()
                                 .flatMap(users ->
                                         redisTemplate.opsForSet()
-                                                .add(chatId.toString(), users.toArray(String[]::new))
-                                                .flatMap(_ -> redisTemplate.expire(chatId.toString(), Duration.ofMinutes(30)))
+                                                .add(CHAT_KEY + ":" + chatId, users.toArray(String[]::new))
+                                                .flatMap(_ -> redisTemplate.expire(CHAT_KEY + ":" + chatId, Duration.ofMinutes(30)))
                                                 .thenReturn(users)
                                 )
                                 .flatMapIterable(l -> l)
