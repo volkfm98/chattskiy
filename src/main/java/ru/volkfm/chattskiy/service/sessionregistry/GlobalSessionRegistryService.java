@@ -1,11 +1,12 @@
 package ru.volkfm.chattskiy.service.sessionregistry;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import ru.volkfm.chattskiy.config.ApplicationConfig;
+import ru.volkfm.chattskiy.config.ApplicationProperties;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -15,22 +16,21 @@ import static ru.volkfm.chattskiy.constant.Redis.USER_KEY;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class GlobalSessionRegistryService {
     // Store in Redis for each user a hash with (session -> nodeId, TTL).
-    // ToDo: Introduce interface, adjust return types
 
-    private final ApplicationConfig appConfig;
+    private final ApplicationProperties appProps;
     private final ReactiveStringRedisTemplate redisTemplate;
 
     // Add to redis hash entry with TTL
     public Mono<Void> register(UUID userId, String sessionId) {
         String key = getUserKey(userId);
 
-        return redisTemplate.<String, String>opsForHash().put(key, sessionId, appConfig.nodeId)
+        return redisTemplate.<String, String>opsForHash().put(key, sessionId, appProps.nodeId)
                 .flatMap(_ -> redisTemplate.<String, String>opsForHash()
-                        .expire(key, Duration.ofSeconds(30), Collections.singleton(sessionId))
-                .then()// ToDo: Adjust TTL
-        );
+                        .expire(key, appProps.redis.ttl, Collections.singleton(sessionId)))
+                .then();
     }
 
     public Mono<Long> unregister(UUID userId, String sessionId) {
@@ -39,6 +39,19 @@ public class GlobalSessionRegistryService {
 
     public Flux<String> getNodes(UUID userId) {
         return redisTemplate.<String, String>opsForHash().values(getUserKey(userId)).distinct();
+    }
+
+    public Mono<Void> renew(UUID userId, String sessionId) {
+        return redisTemplate.<String, String>opsForHash()
+                .getTimeToLive(getUserKey(userId), Collections.singleton(sessionId))
+                .filter(exp -> {
+                    Duration remainingTtl = exp.ttlOf(sessionId);
+                    return remainingTtl != null && appProps.redis.ttl.dividedBy(3).compareTo(remainingTtl) > 0;
+                })
+                .doOnNext(_ -> log.debug("Renewing session id {}", sessionId))
+                .flatMap(_ -> redisTemplate.opsForHash()
+                        .expire(getUserKey(userId), appProps.redis.ttl, Collections.singleton(sessionId)))
+                .then();
     }
 
     private String getUserKey(UUID userId) {

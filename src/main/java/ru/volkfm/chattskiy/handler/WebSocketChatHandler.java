@@ -9,9 +9,11 @@ import org.springframework.web.reactive.socket.WebSocketMessage;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import ru.volkfm.chattskiy.config.ApplicationProperties;
 import ru.volkfm.chattskiy.handler.event.EventHandler;
 import ru.volkfm.chattskiy.model.event.Event;
 import ru.volkfm.chattskiy.model.event.EventType;
+import ru.volkfm.chattskiy.service.sessionregistry.LocalSession;
 import ru.volkfm.chattskiy.service.sessionregistry.SessionRegistryService;
 import tools.jackson.databind.ObjectMapper;
 
@@ -24,56 +26,58 @@ import static ru.volkfm.chattskiy.config.WebSocketConfig.ATTRIBUTE_USER_ID_KEY;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class ChatWsHandler implements WebSocketHandler {
+public class WebSocketChatHandler implements WebSocketHandler {
     public final static String BEAN_CHAT_WS_EVENT_HANDLER_MAP = "ChatWsEventHandlerMapBean";
 
     private final ObjectMapper objectMapper;
+    private final ApplicationProperties appProps;
     private final SessionRegistryService sessionRegistryService;
 
     @Qualifier(BEAN_CHAT_WS_EVENT_HANDLER_MAP)
     private final Map<EventType, EventHandler> eventHandlerMap;
 
     @Override
-    public Mono<Void> handle(WebSocketSession session) {
-        var userId = (UUID) session.getHandshakeInfo().getAttributes().get(ATTRIBUTE_USER_ID_KEY);
+    public Mono<Void> handle(WebSocketSession wsSession) {
+        var userId = (UUID) wsSession.getHandshakeInfo().getAttributes().get(ATTRIBUTE_USER_ID_KEY);
 
-        var eventPipeline = session.receive()
-                .flatMap(this::handleWsEvent)
-                .map(object -> session.textMessage(objectMapper.writeValueAsString(object)))
-                .doFinally(sig -> log.info("sig_type: %s, That's it folks!".formatted(sig.name())));
+        return Mono.usingWhen(sessionRegistryService.register(userId),
+                userSession -> {
+                        log.info("Session %s begins".formatted(userSession.getSessionId()));
 
-        Flux<WebSocketMessage> ping = getPingFlux(session, Duration.ofSeconds(30));
+                        Flux<WebSocketMessage> ping = getPingFlux(wsSession, appProps.redis.ttl.dividedBy(3));
 
-        // Stub for now
-        Flux<WebSocketMessage> outsideEvents = Flux.range(0, 10).delayElements(Duration.ofSeconds(2))
-                .map(i -> session.textMessage("side event " + i));
+                        Flux<WebSocketMessage> clientEvents = wsSession.receive()
+                                .flatMap(m -> handleWsEvent(m, wsSession, userSession))
+                                .doFinally(sig -> log.info("sig_type: %s, That's it folks!".formatted(sig.name())));
 
-        return Mono.usingWhen(sessionRegistryService.register(userId, this),
-                sessionId -> {
-                        log.info("Session %s begins".formatted(sessionId));
-                        return session.send(Flux.merge(ping, eventPipeline, outsideEvents)
+                        Flux<WebSocketMessage> outsideEvents = userSession.getOutsideSink().asFlux()
+                                .doOnNext(message -> log.info("Got outside event:" + objectMapper.writeValueAsString(message)))
+                                .map(event -> wsSession.textMessage(objectMapper.writeValueAsString(event)));
+
+                        return wsSession.send(Flux.merge(ping, clientEvents, outsideEvents)
                                 .doOnError(t -> log.info(t.toString()))
                                 .doFinally(sig -> log.info("sig_type: %s, sess ended".formatted(sig.name())))
                         );},
-                sessionId -> sessionRegistryService.unregister(userId, sessionId));
+                localSession -> sessionRegistryService.unregister(userId, localSession.getSessionId()));
     }
 
     protected Event getEventFromWsMessage(WebSocketMessage wsMsg) {
             return objectMapper.readValue(wsMsg.getPayloadAsText(), Event.class);
     }
 
-    protected Flux<Event> handleWsEvent(WebSocketMessage wsMsg) {
+    protected Flux<WebSocketMessage> handleWsEvent(WebSocketMessage wsMsg, WebSocketSession wsSession, LocalSession userSession) {
         log.info("ws_type: %s, raw_data: %s".formatted(wsMsg.getType().name(), wsMsg.getPayloadAsText()));
 
         switch (wsMsg.getType()) {
             case WebSocketMessage.Type.TEXT -> {
                 Event event = getEventFromWsMessage(wsMsg);
 
-                return delegateEventHandling(event);
+                return delegateEventHandling(event)
+                        .map(object -> wsSession.textMessage(objectMapper.writeValueAsString(object)));
             }
             case WebSocketMessage.Type.PONG -> {
                 log.info("ws_type: %s, PING PONG".formatted(wsMsg.getType().name()));
-                // ToDo: Add ping pong handling
+                return sessionRegistryService.renew(userSession).thenMany(Flux.empty());
             }
         }
 

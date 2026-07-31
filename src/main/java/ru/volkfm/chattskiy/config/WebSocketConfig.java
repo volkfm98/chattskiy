@@ -12,7 +12,7 @@ import org.springframework.web.reactive.socket.server.support.HandshakeWebSocket
 import org.springframework.web.reactive.socket.server.support.WebSocketHandlerAdapter;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-import ru.volkfm.chattskiy.handler.ChatWsHandler;
+import ru.volkfm.chattskiy.handler.WebSocketChatHandler;
 import ru.volkfm.chattskiy.service.R2dbUserDetailsService;
 
 import java.util.HashMap;
@@ -25,12 +25,12 @@ public class WebSocketConfig {
     public static final String INCOMING_MESSAGE_EVENT_ENDPOINT_KEY = "/chat";
     public static final String ATTRIBUTE_USER_ID_KEY = "principalUserId";
 
-    public final ChatWsHandler chatWsHandler;
+    public final WebSocketChatHandler webSocketChatHandler;
 
     @Bean
     public HandlerMapping webSocketHandlerMapping() {
         Map<String, WebSocketHandler> map = new HashMap<>();
-        map.put(INCOMING_MESSAGE_EVENT_ENDPOINT_KEY, chatWsHandler);
+        map.put(INCOMING_MESSAGE_EVENT_ENDPOINT_KEY, webSocketChatHandler);
 
         SimpleUrlHandlerMapping handlerMapping = new SimpleUrlHandlerMapping();
         handlerMapping.setOrder(1);

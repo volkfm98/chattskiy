@@ -3,6 +3,7 @@ package ru.volkfm.chattskiy.model.event;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonSubTypes.Type;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -19,6 +20,7 @@ import java.util.UUID;
         @Type(value = AckEvent.class, name = "ACK")
 })
 public abstract class Event {
-    protected UUID eventId;
+    protected UUID eventId = UUID.randomUUID();
+    @NotNull(message = "event type must be present")
     protected EventType type;
 }
