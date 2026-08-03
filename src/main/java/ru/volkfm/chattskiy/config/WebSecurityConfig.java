@@ -23,9 +23,11 @@ public class WebSecurityConfig {
     public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http) {
          http
                  .authorizeExchange(exchanges -> exchanges
-                        .pathMatchers("/chat").hasRole("USER")
-                        .anyExchange().authenticated())
-                        .httpBasic(Customizer.withDefaults())
+                         .pathMatchers("/actuator/**").hasRole("ADMIN")
+                         .pathMatchers("/chat").hasRole("USER")
+                         .anyExchange().authenticated()
+                 )
+                 .httpBasic(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable());
         return http.build();
     }

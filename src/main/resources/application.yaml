@@ -1,7 +1,48 @@
 spring:
+  main:
+    allow-bean-definition-overriding: true
   application:
     name: Chattskiy
   kafka:
     bootstrap-servers:
-#      - "kafka:9092"
+      #      - "kafka:9092"
       - "localhost:29092"
+  r2dbc:
+    username: postgres
+    password:
+    url: r2dbc:postgresql://localhost:5432/chattskiy
+  cassandra:
+    keyspace-name: chattskiy
+    port: 9042
+    contact-points:
+      - 127.0.0.1
+    local-datacenter: datacenter1
+
+app:
+  node-id: "1"
+  redis:
+    ttl: 60s
+    channels:
+      - "node:1"
+      - "broadcast"
+
+logging:
+  structured:
+    ecs:
+      service:
+        node-name: ${app.node-id}
+        environment: Development
+        version: 1
+    format:
+      console: ecs
+  level:
+    root: DEBUG
+
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
