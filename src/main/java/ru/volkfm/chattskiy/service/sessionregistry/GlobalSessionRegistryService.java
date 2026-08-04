@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.UUID;
 
 import static ru.volkfm.chattskiy.constant.Redis.USER_KEY;
+import static ru.volkfm.chattskiy.util.logging.StructuredLog.SESSION_ID_KEY;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +28,11 @@ public class GlobalSessionRegistryService {
     public Mono<Void> register(UUID userId, String sessionId) {
         String key = getUserKey(userId);
 
+        log.atDebug()
+                .addKeyValue(USER_KEY, userId)
+                .addKeyValue(SESSION_ID_KEY, sessionId)
+                .log("Registering session {} for user {} in global registry", sessionId, userId);
+
         return redisTemplate.<String, String>opsForHash().put(key, sessionId, appProps.nodeId)
                 .flatMap(_ -> redisTemplate.<String, String>opsForHash()
                         .expire(key, appProps.redis.ttl, Collections.singleton(sessionId)))
@@ -34,6 +40,11 @@ public class GlobalSessionRegistryService {
     }
 
     public Mono<Long> unregister(UUID userId, String sessionId) {
+        log.atDebug()
+                .addKeyValue(USER_KEY, userId)
+                .addKeyValue(SESSION_ID_KEY, sessionId)
+                .log("Unregistering session {} for user {} in global registry", sessionId, userId);
+
         return redisTemplate.<String, String>opsForHash().remove(getUserKey(userId), sessionId);
     }
 
@@ -48,7 +59,10 @@ public class GlobalSessionRegistryService {
                     Duration remainingTtl = exp.ttlOf(sessionId);
                     return remainingTtl != null && appProps.redis.ttl.dividedBy(3).compareTo(remainingTtl) > 0;
                 })
-                .doOnNext(_ -> log.debug("Renewing session id {}", sessionId))
+                .doOnNext(_ -> log.atDebug()
+                        .addKeyValue(USER_KEY, userId)
+                        .addKeyValue(SESSION_ID_KEY, sessionId)
+                        .log("Renewing session id {}", sessionId))
                 .flatMap(_ -> redisTemplate.opsForHash()
                         .expire(getUserKey(userId), appProps.redis.ttl, Collections.singleton(sessionId)))
                 .then();

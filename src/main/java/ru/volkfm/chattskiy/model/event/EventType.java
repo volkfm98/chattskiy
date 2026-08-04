@@ -6,5 +6,5 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Getter
 public enum EventType {
-    MESSAGE, ACK
+    MESSAGE, ACK, ERROR
 }

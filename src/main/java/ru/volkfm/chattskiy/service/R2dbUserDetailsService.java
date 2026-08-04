@@ -2,6 +2,7 @@ package ru.volkfm.chattskiy.service;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.ReactiveUserDetailsService;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -12,6 +13,7 @@ import ru.volkfm.chattskiy.repository.postgres.UserRepository;
 import java.util.Collections;
 
 @RequiredArgsConstructor
+@Slf4j
 public class R2dbUserDetailsService implements ReactiveUserDetailsService {
     private final UserRepository userRepository;
 
@@ -28,6 +30,8 @@ public class R2dbUserDetailsService implements ReactiveUserDetailsService {
 
     @Override
     public Mono<UserDetails> findByUsername(String username) {
+        log.atDebug().log("Finding user principal by username {}", username);
+
         return userRepository.findByUsername(username)
                 .map(DbUser::new);
     }

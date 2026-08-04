@@ -9,7 +9,7 @@ import java.util.UUID;
 
 @Data
 public abstract class PublishableEvent extends Event {
-    @NotNull(message = "userId must be present")
+    // Filled by web socket handler at the time of delegation
     protected UUID userId;
     @NotNull(message = "chatId must be present")
     protected UUID chatId;

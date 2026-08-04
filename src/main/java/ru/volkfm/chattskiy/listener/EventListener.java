@@ -5,15 +5,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Sinks;
-import ru.volkfm.chattskiy.model.event.Event;
 import ru.volkfm.chattskiy.model.event.PublishableEvent;
 import ru.volkfm.chattskiy.service.eventpublishing.EventListeningService;
 import ru.volkfm.chattskiy.service.sessionregistry.LocalSession;
 import ru.volkfm.chattskiy.service.sessionregistry.SessionRegistryService;
+import ru.volkfm.chattskiy.util.logging.StructuredLog;
 
-import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
+
+import static ru.volkfm.chattskiy.util.logging.StructuredLog.*;
 
 @Service
 @RequiredArgsConstructor
@@ -25,7 +26,20 @@ public class EventListener {
     @PostConstruct
     void startListening() {
         handleEvents()
-                .onErrorContinue((t, object) -> log.error("Error occurred while listening events from redis", t)) // ToDo: log
+                .onErrorContinue((t, o) -> {
+                    var logEventBuilder = log.atError();
+
+                    if (o instanceof PublishableEvent event) {
+                        logEventBuilder = logEventBuilder
+                                .addKeyValue(TRACE_ID_KEY, event.getEventId().toString())
+                                .addKeyValue(USER_ID_KEY, event.getUserId().toString());
+                    }
+
+                    logEventBuilder
+                            .addKeyValue(OBJECT_KEY, StructuredLog.object(o))
+                            .setCause(t)
+                            .log("Error occurred while handling outside event from redis");
+                })
                 .subscribe();
     }
 
@@ -37,15 +51,21 @@ public class EventListener {
                             default -> Flux.just(event);
                 })
                 .doOnNext(event -> {
-                    List<Sinks.Many<Event>> sinks = event.getRecipients().stream()
+                    Stream<LocalSession> sessions = event.getRecipients().stream()
                             .map(UUID::fromString)
-                            .flatMap(recipientId -> sessionRegistry.getSessions(recipientId).values().stream())
-                            .map(LocalSession::getOutsideSink)
-                            .toList();
+                            .flatMap(recipientId -> sessionRegistry.getSessions(recipientId).values().stream());
 
-                    List<Sinks.EmitResult> results = sinks.stream().map(sink -> sink.tryEmitNext(event)).toList(); // ToDo: log each emit
+                    sessions.forEach(session -> {
+                        log.atDebug()
+                                .addKeyValue(TRACE_ID_KEY, event.getEventId().toString())
+                                .addKeyValue(USER_ID_KEY, event.getUserId().toString())
+                                .addKeyValue(SESSION_ID_KEY, session.getSessionId())
+                                .addKeyValue(OBJECT_KEY, StructuredLog.object(event))
+                                .log("Emitting outside event {}", event.getEventId());
 
-                    log.info("Emitted events with statuses: {}", results);
+                        var sink = session.getOutsideSink();
+                        sink.tryEmitNext(event);
+                    });
                 });
     }
 }

@@ -11,6 +11,7 @@ import reactor.core.publisher.Sinks;
 import ru.volkfm.chattskiy.model.event.PublishableEvent;
 import ru.volkfm.chattskiy.repository.postgres.ChatRepository;
 import ru.volkfm.chattskiy.service.sessionregistry.SessionRegistryService;
+import ru.volkfm.chattskiy.util.logging.StructuredLog;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
@@ -18,6 +19,8 @@ import java.util.List;
 import java.util.UUID;
 
 import static ru.volkfm.chattskiy.constant.Redis.*;
+import static ru.volkfm.chattskiy.util.logging.StructuredLog.*;
+import static ru.volkfm.chattskiy.util.logging.StructuredLog.OBJECT_KEY;
 
 
 /**
@@ -47,21 +50,38 @@ public class RedisEventPublishingService implements EventPublishingService {
 
     private Mono<Void> process(Flux<PublishableEvent> incomingEvents) {
         // event -> map to ctx -> chatParticipantsList and map to ctx -> subsList(event) -> map ctx to enriched event -> publish
-        return incomingEvents
+        return Mono.defer(() -> incomingEvents
                 .flatMap(e ->
-                        getUserIds(e.getChatId())
+                        getUserIds(e)
                                 .collectList()
                                 .doOnNext(e::setRecipients)
                                 .thenReturn(e)
                 )
                 .flatMap(e ->
                         getSubs(e.getRecipients())
-                                .doOnNext(sub -> log.debug("Sending to node {}", sub)) // ToDo: log
+                                .doOnNext(sub -> log.atDebug()
+                                        .addKeyValue(USER_ID_KEY, e.getUserId())
+                                        .addKeyValue(TRACE_ID_KEY, e.getEventId())
+                                        .addKeyValue(OBJECT_KEY, StructuredLog.object(e))
+                                        .addKeyValue(DEST_KEY, sub)
+                                        .log("Sending event {} to destination {} via redis pub/sub", e.getEventId(), sub))
                                 .flatMap(sub ->
                                         redisTemplate.convertAndSend(NODE_KEY + ":" + sub, objectMapper.writeValueAsString(e)))
                 )
-                .onErrorContinue((e, _) -> log.error("Error during event publishing", e)) // ToDo: log
-                .then();
+                .onErrorContinue((t, o) -> {
+                    var logBuilder = log.atError()
+                            .setCause(t)
+                            .addKeyValue(OBJECT_KEY, StructuredLog.object(o));
+
+                    if (o instanceof PublishableEvent event) {
+                        logBuilder = logBuilder
+                                .addKeyValue(TRACE_ID_KEY, event.getEventId())
+                                .addKeyValue(USER_ID_KEY, event.getUserId());
+                    }
+
+                    logBuilder.log("Error during event publishing");
+                })
+                .then());
     }
 
     private Flux<String> getSubs(List<String> userIds) {
@@ -70,17 +90,25 @@ public class RedisEventPublishingService implements EventPublishingService {
                 .distinct();
     }
 
-    private Flux<String> getUserIds(UUID chatId) {
+    private Flux<String> getUserIds(PublishableEvent event) {
+        UUID chatId = event.getChatId();
+
         return Flux.defer(() -> {
-                    log.debug("Getting members of chat:{} from cache", chatId); // ToDo: log
-                    return redisTemplate.opsForSet().members(CHAT_KEY + ":" + chatId.toString());
-                })
+                    log.atDebug()
+                            .addKeyValue(USER_ID_KEY, event.getUserId())
+                            .addKeyValue(TRACE_ID_KEY, event.getEventId())
+                            .log("Getting members of chat:{} from cache", chatId);
+
+                    return redisTemplate.opsForSet().members(CHAT_KEY + ":" + chatId.toString())
                 .switchIfEmpty(
                         Flux.defer(() -> {
-                            log.debug("Chat members of chat:{} not cached. Retrieving from DB", chatId); // ToDo: log
+                            log.atDebug()
+                                    .addKeyValue(USER_ID_KEY, event.getUserId())
+                                    .addKeyValue(TRACE_ID_KEY, event.getEventId())
+                                    .log("Chat members of chat:{} not cached. Retrieving from DB", chatId);
                             return getUserIdsFromDbAndCache(chatId);
-                        })
-                );
+                        }));
+        });
     }
 
     private Flux<String> getUserIdsFromDbAndCache(UUID chatId) {

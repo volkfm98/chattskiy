@@ -19,7 +19,7 @@ public class SessionRegistryService {
 
         var session = new LocalSession(userId, sessionId);
 
-        localSessionRegistryService.register(userId, sessionId, session);
+        localSessionRegistryService.register(session);
         return globalSessionRegistryService.register(userId, sessionId).thenReturn(session);
     }
 

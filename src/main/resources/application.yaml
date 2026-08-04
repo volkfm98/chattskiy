@@ -5,11 +5,11 @@ spring:
     name: Chattskiy
   kafka:
     bootstrap-servers:
-      #      - "kafka:9092"
+#      - "kafka:9092"
       - "localhost:29092"
   r2dbc:
     username: postgres
-    password:
+    password: ${POSTGRES_PASSWORD}
     url: r2dbc:postgresql://localhost:5432/chattskiy
   cassandra:
     keyspace-name: chattskiy
@@ -27,16 +27,16 @@ app:
       - "broadcast"
 
 logging:
+  file:
+    name: ./logs/chat_node.log
   structured:
     ecs:
       service:
         node-name: ${app.node-id}
         environment: Development
-        version: 1
+        version: 1.0.0-RC1
     format:
-      console: ecs
-  level:
-    root: DEBUG
+      file: ecs
 
 management:
   endpoint:

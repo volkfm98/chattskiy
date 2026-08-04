@@ -8,7 +8,10 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import ru.volkfm.chattskiy.config.ApplicationProperties;
 import ru.volkfm.chattskiy.model.event.PublishableEvent;
+import ru.volkfm.chattskiy.util.logging.StructuredLog;
 import tools.jackson.databind.ObjectMapper;
+
+import static ru.volkfm.chattskiy.util.logging.StructuredLog.*;
 
 @Service
 @RequiredArgsConstructor
@@ -21,13 +24,26 @@ public class RedisEventListeningService implements EventListeningService {
     @Override
     public Flux<PublishableEvent> getEvents() {
         return redisTemplate.listenToChannel(appProps.redis.channels)
-                .doOnSubscribe(s -> log.info("Subscribed to Redis"))
-                .doOnCancel(() -> log.info("Redis subscription cancelled"))
-                .doOnComplete(() -> log.info("Redis subscription completed"))
-                .doOnError(e -> log.error("Redis subscription error", e))
-                .doFinally(sig -> log.info("Redis finally: {}", sig))
                 .map(ReactiveSubscription.Message::getMessage)
-                .doOnNext(message -> log.info("Raw message {}", message))
-                .map(e -> objectMapper.readValue(e, PublishableEvent.class));
+                .map(e -> objectMapper.readValue(e, PublishableEvent.class))
+                .doOnNext(event -> log.atDebug()
+                        .addKeyValue(TRACE_ID_KEY, event.getEventId())
+                        .addKeyValue(USER_ID_KEY, event.getUserId())
+                        .addKeyValue(OBJECT_KEY, event)
+                        .log("Received outside event {}", event.getEventId()))
+                .onErrorContinue((t, o) -> {
+                    var logEventBuilder = log.atError();
+
+                    if (o instanceof PublishableEvent event) {
+                        logEventBuilder = logEventBuilder
+                                .addKeyValue(TRACE_ID_KEY, event.getEventId().toString())
+                                .addKeyValue(USER_ID_KEY, event.getUserId().toString());
+                    }
+
+                    logEventBuilder
+                            .setCause(t)
+                            .addKeyValue(OBJECT_KEY, StructuredLog.object(o))
+                            .log("Error occurred listening outside event from redis");
+                });
     }
 }

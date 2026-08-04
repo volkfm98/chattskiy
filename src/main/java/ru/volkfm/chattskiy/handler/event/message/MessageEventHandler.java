@@ -8,13 +8,13 @@ import reactor.core.publisher.Mono;
 import ru.volkfm.chattskiy.generator.LongIdGenerator;
 import ru.volkfm.chattskiy.handler.event.EventHandler;
 import ru.volkfm.chattskiy.mapper.MessageEventToEntityMapper;
-import ru.volkfm.chattskiy.model.event.AckEvent;
-import ru.volkfm.chattskiy.model.event.Event;
-import ru.volkfm.chattskiy.model.event.EventType;
-import ru.volkfm.chattskiy.model.event.MessageEvent;
+import ru.volkfm.chattskiy.model.event.*;
 import ru.volkfm.chattskiy.model.data.cassandra.Message;
 import ru.volkfm.chattskiy.repository.cassandra.MessageRepository;
 import ru.volkfm.chattskiy.service.eventpublishing.RedisEventPublishingService;
+import ru.volkfm.chattskiy.util.logging.StructuredLog;
+
+import static ru.volkfm.chattskiy.util.logging.StructuredLog.*;
 
 @Service
 @RequiredArgsConstructor
@@ -38,14 +38,27 @@ public class MessageEventHandler implements EventHandler {
 
         message.getKey().setMessageId(longIdGenerator.generateId());
 
-        return Mono.defer(() -> {
-            log.debug("Saving message {}", message); // ToDo: log
-            return messageRepository.save(message);
-        })
-                .doOnError(t -> log.error("Could not persist message", t))
+        return Flux.deferContextual(ctx -> {
+            log.atDebug()
+                    .addKeyValue(SESSION_ID_KEY, ctx.<String>get(SESSION_ID_KEY))
+                    .addKeyValue(USER_ID_KEY, ctx.<String>get(USER_ID_KEY))
+                    .addKeyValue(TRACE_ID_KEY, event.getEventId().toString())
+                    .addKeyValue(OBJECT_KEY, StructuredLog.object(message))
+                    .log("Saving message {} from chat {}", message.getKey().getMessageId(), message.getKey().getChatId());
+            return messageRepository.save(message)
                 .doOnNext(_ -> eventPublisher.publish(messageEvent))
                 .thenReturn((Event) new AckEvent(event.getEventId()))
-                .flux();
+                .onErrorResume(t -> {
+                    log.atError()
+                            .setCause(t)
+                            .addKeyValue(SESSION_ID_KEY, ctx.<String>get(SESSION_ID_KEY))
+                            .addKeyValue(USER_ID_KEY, ctx.<String>get(USER_ID_KEY))
+                            .addKeyValue(TRACE_ID_KEY, event.getEventId().toString())
+                            .log("Could not persist message");
+
+                    return Mono.just(new ErrorEvent(event.getEventId(), "500-1", "Couldn't persist the message"));
+                });
+        });
     }
 
     @Override
