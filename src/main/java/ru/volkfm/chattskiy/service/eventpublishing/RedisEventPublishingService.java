@@ -29,6 +29,7 @@ import static ru.volkfm.chattskiy.util.logging.StructuredLog.OBJECT_KEY;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+// ToDo: Multiple responsibilities. Split
 public class RedisEventPublishingService implements EventPublishingService {
     private final ObjectMapper objectMapper;
     private final ReactiveStringRedisTemplate redisTemplate;
@@ -45,7 +46,18 @@ public class RedisEventPublishingService implements EventPublishingService {
     @Override
     public PublishingStatus publish(PublishableEvent event) {
         Sinks.EmitResult result = sink.tryEmitNext(event);
-        return result.isSuccess() ? PublishingStatus.SUCCESS : PublishingStatus.ERROR;
+
+        if (result.isSuccess()) {
+            return PublishingStatus.SUCCESS;
+        } else {
+            log.atWarn()
+                    .addKeyValue(TRACE_ID_KEY, event.getEventId())
+                    .addKeyValue(USER_ID_KEY, event.getUserId())
+                    .addKeyValue(OBJECT_KEY, result)
+                    .log("Unable to emit event {} to publishing pipeline. Result is {}", event.getEventId(), result);
+
+            return PublishingStatus.ERROR;
+        }
     }
 
     private Mono<Void> process(Flux<PublishableEvent> incomingEvents) {

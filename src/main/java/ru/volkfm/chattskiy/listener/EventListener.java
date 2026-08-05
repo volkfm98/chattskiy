@@ -5,8 +5,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 import ru.volkfm.chattskiy.model.event.PublishableEvent;
 import ru.volkfm.chattskiy.service.eventpublishing.EventListeningService;
+import ru.volkfm.chattskiy.service.eventpublishing.PublishingStatus;
 import ru.volkfm.chattskiy.service.sessionregistry.LocalSession;
 import ru.volkfm.chattskiy.service.sessionregistry.SessionRegistryService;
 import ru.volkfm.chattskiy.util.logging.StructuredLog;
@@ -64,7 +66,16 @@ public class EventListener {
                                 .log("Emitting outside event {}", event.getEventId());
 
                         var sink = session.getOutsideSink();
-                        sink.tryEmitNext(event.copy());
+                        Sinks.EmitResult result = sink.tryEmitNext(event.copy());
+
+                        if (result.isFailure()) {
+                            log.atWarn()
+                                    .addKeyValue(TRACE_ID_KEY, event.getEventId())
+                                    .addKeyValue(USER_ID_KEY, event.getUserId())
+                                    .addKeyValue(SESSION_ID_KEY, session.getSessionId())
+                                    .addKeyValue(OBJECT_KEY, result)
+                                    .log("Unable to emit outside event {} to session {} pipeline. Result is {}", event.getEventId(), session.getSessionId(), result);
+                        }
                     });
                 });
     }
