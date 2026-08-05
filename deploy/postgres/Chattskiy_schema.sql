@@ -1,9 +1,5 @@
 -- public.chat definition
 
--- Drop table
-
--- DROP TABLE public.chat;
-
 CREATE TABLE IF NOT EXISTS public.chat (
                              id uuid NOT NULL,
                              "name" varchar NULL,
@@ -11,10 +7,6 @@ CREATE TABLE IF NOT EXISTS public.chat (
 );
 
 -- public."user" definition
-
--- Drop table
-
--- DROP TABLE public."user";
 
 CREATE TABLE IF NOT EXISTS public."user" (
                                id uuid NOT NULL,
@@ -26,10 +18,6 @@ CREATE TABLE IF NOT EXISTS public."user" (
 );
 
 -- public.chat_user definition
-
--- Drop table
-
--- DROP TABLE public.chat_user;
 
 CREATE TABLE IF NOT EXISTS public.chat_user (
                                   chat_id uuid NOT NULL,
