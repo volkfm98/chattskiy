@@ -13,11 +13,13 @@ import java.util.UUID;
 @Setter
 @JsonTypeInfo(
         use = JsonTypeInfo.Id.NAME,
+        include = JsonTypeInfo.As.EXISTING_PROPERTY,
         property = "type",
         visible = true)
 @JsonSubTypes({
         @Type(value = MessageEvent.class, name = "MESSAGE"),
-        @Type(value = AckEvent.class, name = "ACK")
+        @Type(value = AckEvent.class, name = "ACK"),
+        @Type(value = ErrorEvent.class, name = "ERROR")
 })
 public abstract class Event {
     protected UUID eventId = UUID.randomUUID();
