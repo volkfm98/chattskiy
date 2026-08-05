@@ -64,7 +64,7 @@ public class EventListener {
                                 .log("Emitting outside event {}", event.getEventId());
 
                         var sink = session.getOutsideSink();
-                        sink.tryEmitNext(event);
+                        sink.tryEmitNext(event.copy());
                     });
                 });
     }
