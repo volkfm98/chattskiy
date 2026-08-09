@@ -1,0 +1,35 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  application:
+    name: Chattskiy
+app:
+  node-id: "1"
+  redis:
+    ttl: 5s
+    channels:
+      - "node:1"
+      - "broadcast"
+
+logging:
+  file:
+    name: ./logs/chat_node.log
+  structured:
+    ecs:
+      service:
+        node-name: ${app.node-id}
+        environment: Test
+        version: 1.0.0-RC1
+    format:
+      file: ecs
+#  level:
+#    root: debug
+
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
