@@ -3,20 +3,19 @@ spring:
     allow-bean-definition-overriding: true
   application:
     name: Chattskiy
-  kafka:
-    bootstrap-servers:
-#      - "kafka:9092"
-      - "localhost:29092"
   r2dbc:
-    username: postgres
+    username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
-    url: r2dbc:postgresql://localhost:5432/chattskiy
+    url: ${POSTGRES_CONN_STRING}
   cassandra:
     keyspace-name: chattskiy
     port: 9042
     contact-points:
-      - 127.0.0.1
+      - ${CASSANDRA_CONTACT_POINT}
     local-datacenter: datacenter1
+  data:
+    redis:
+      host: ${REDIS_HOST}
 
 app:
   node-id: "1"
