@@ -28,6 +28,10 @@ services:
       - 3000:3000
     volumes:
       - ./grafana:/var/lib/grafana
+  k6:
+    image: grafana/k6
+    volumes:
+      - ./k6:/app
   traefik:
     image: traefik:v3.6
     command:
