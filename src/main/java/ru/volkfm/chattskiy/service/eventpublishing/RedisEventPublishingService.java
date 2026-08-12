@@ -1,5 +1,6 @@
 package ru.volkfm.chattskiy.service.eventpublishing;
 
+import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PostConstruct;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +9,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import ru.volkfm.chattskiy.metric.EventHandlingLatencyMeter;
 import ru.volkfm.chattskiy.model.event.PublishableEvent;
 import ru.volkfm.chattskiy.repository.postgres.ChatRepository;
 import ru.volkfm.chattskiy.service.sessionregistry.SessionRegistryService;
@@ -35,6 +37,7 @@ public class RedisEventPublishingService implements EventPublishingService {
     private final ReactiveStringRedisTemplate redisTemplate;
     private final SessionRegistryService registry;
     private final ChatRepository chatRepo;
+    private final EventHandlingLatencyMeter latencyMeter;
     private final Sinks.Many<PublishableEvent> sink = Sinks.many().multicast().onBackpressureBuffer();
 
     @PostConstruct
@@ -63,35 +66,40 @@ public class RedisEventPublishingService implements EventPublishingService {
     private Mono<Void> process(Flux<PublishableEvent> incomingEvents) {
         // event -> map to ctx -> chatParticipantsList and map to ctx -> subsList(event) -> map ctx to enriched event -> publish
         return Mono.defer(() -> incomingEvents
-                .flatMap(e ->
-                        getUserIds(e)
-                                .collectList()
-                                .doOnNext(e::setRecipients)
-                                .thenReturn(e)
-                )
-                .flatMap(e ->
-                        getSubs(e.getRecipients())
-                                .doOnNext(sub -> log.atDebug()
-                                        .addKeyValue(USER_ID_KEY, e.getUserId())
-                                        .addKeyValue(TRACE_ID_KEY, e.getEventId())
-                                        .addKeyValue(OBJECT_KEY, StructuredLog.object(e))
-                                        .addKeyValue(DEST_KEY, sub)
-                                        .log("Sending event {} to destination {} via redis pub/sub", e.getEventId(), sub))
-                                .flatMap(sub ->
-                                        redisTemplate.convertAndSend(NODE_KEY + ":" + sub, objectMapper.writeValueAsString(e)))
-                )
-                .onErrorContinue((t, o) -> {
-                    var logBuilder = log.atError()
-                            .setCause(t)
-                            .addKeyValue(OBJECT_KEY, StructuredLog.object(o));
+                .flatMap(incomingEvent -> {
+                    Timer.Sample latency = latencyMeter.createSample();
 
-                    if (o instanceof PublishableEvent event) {
-                        logBuilder = logBuilder
-                                .addKeyValue(TRACE_ID_KEY, event.getEventId())
-                                .addKeyValue(USER_ID_KEY, event.getUserId());
-                    }
+                    return Flux.just(incomingEvent).flatMap(e ->
+                            getUserIds(e)
+                                    .collectList()
+                                    .doOnNext(e::setRecipients)
+                                    .thenReturn(e)
+                    )
+                            .flatMap(e ->
+                                    getSubs(e.getRecipients())
+                                            .doOnNext(sub -> log.atDebug()
+                                                    .addKeyValue(USER_ID_KEY, e.getUserId())
+                                                    .addKeyValue(TRACE_ID_KEY, e.getEventId())
+                                                    .addKeyValue(OBJECT_KEY, StructuredLog.object(e))
+                                                    .addKeyValue(DEST_KEY, sub)
+                                                    .log("Sending event {} to destination {} via redis pub/sub", e.getEventId(), sub))
+                                            .flatMap(sub ->
+                                                    redisTemplate.convertAndSend(NODE_KEY + ":" + sub, objectMapper.writeValueAsString(e)))
+                            )
+                            .doOnNext(_ -> latencyMeter.measure(latency, EventHandlingLatencyMeter.EventStage.PUBLISHING, incomingEvent.getType()))
+                            .onErrorContinue((t, o) -> {
+                                var logBuilder = log.atError()
+                                        .setCause(t)
+                                        .addKeyValue(OBJECT_KEY, StructuredLog.object(o));
 
-                    logBuilder.log("Error during event publishing");
+                                if (o instanceof PublishableEvent event) {
+                                    logBuilder = logBuilder
+                                            .addKeyValue(TRACE_ID_KEY, event.getEventId())
+                                            .addKeyValue(USER_ID_KEY, event.getUserId());
+                                }
+
+                                logBuilder.log("Error during event publishing");
+                            });
                 })
                 .then());
     }
