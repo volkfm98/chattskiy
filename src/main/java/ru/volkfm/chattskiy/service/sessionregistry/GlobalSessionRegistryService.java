@@ -57,7 +57,7 @@ public class GlobalSessionRegistryService {
                 .getTimeToLive(getUserKey(userId), Collections.singleton(sessionId))
                 .filter(exp -> {
                     Duration remainingTtl = exp.ttlOf(sessionId);
-                    return remainingTtl != null && appProps.redis.ttl.dividedBy(3).compareTo(remainingTtl) > 0;
+                    return remainingTtl != null && appProps.redis.ttl.dividedBy(3).compareTo(remainingTtl) >= 0;
                 })
                 .doOnNext(_ -> log.atDebug()
                         .addKeyValue(USER_KEY, userId)

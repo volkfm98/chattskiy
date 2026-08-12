@@ -29,6 +29,8 @@ public class MessageEventHandler implements EventHandler {
     public Flux<Event> handle(Event event) {
         var messageEvent = (MessageEvent) event;
 
+        // ToDo: validate event. Whether user actually can send messages this chat
+
         Message message = messageMapper.convert(messageEvent);
 
         if (message == null || message.getKey() == null) {
