@@ -7,6 +7,9 @@ RUN mvn clean package -DskipTests
 
 # Run stage
 FROM eclipse-temurin:26-jre
-COPY --from=build /app/target/*.jar app.jar
-ENTRYPOINT ["java","-jar","/app.jar"]
+COPY --from=build /app/target/*.jar /app.jar
+COPY docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 EXPOSE 8080

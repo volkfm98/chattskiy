@@ -18,11 +18,11 @@ spring:
       host: ${REDIS_HOST}
 
 app:
-  node-id: "1"
+  node-id: ${NODE_ID}
   redis:
     ttl: 60s
     channels:
-      - "node:1"
+      - "node:${app.node-id}"
       - "broadcast"
 
 logging:

@@ -36,7 +36,14 @@ scrape_configs:
     basic_auth:
       username: admin
       password: admin
-    static_configs:
-      - targets: ['app:8080']
-        labels:
-          app: "app"
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+    relabel_configs:
+      # Only keep containers that have a `prometheus-job` label.
+      - source_labels: [ __meta_docker_container_label_prometheus_job ]
+        regex: .+
+        action: keep
+      # Use the task labels that are prefixed by `prometheus-`.
+      - regex: __meta_docker_container_label_prometheus_(.+)
+        action: labelmap
+        replacement: $1

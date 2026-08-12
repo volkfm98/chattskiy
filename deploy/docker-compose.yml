@@ -18,16 +18,39 @@ services:
     image: prom/prometheus:latest
     ports:
       - 9090:9090
+    user: root
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
   grafana:
     image: grafana/grafana:latest
     ports:
       - 3000:3000
+    volumes:
+      - ./grafana:/var/lib/grafana
+  traefik:
+    image: traefik:v3.6
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
   app:
+    depends_on:
+      - redis
+      - postgres
+      - cassandra
     build: ../
     env_file:
       - postgres.secret.env
       - app.env
-    ports:
-      - 8080:8080
+    expose:
+      - "8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chattskiy.rule=PathPrefix(`/`)"
+      - "traefik.http.services.chattskiy.loadbalancer.server.port=8080"
+      - "prometheus-job=app"
