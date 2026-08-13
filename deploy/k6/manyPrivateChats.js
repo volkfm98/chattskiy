@@ -1,23 +1,33 @@
 import ws from 'k6/ws';
 import encoding from 'k6/encoding';
+import exec from 'k6/execution';
+import { open } from 'k6/experimental/fs';
+import csv from 'k6/experimental/csv';
 import { sleep, check } from 'k6';
 
 export const options = {
   // vus: 10,
   // duration: '30s',
   stages: [
-    { duration: "30s", target: 10 },
-    { duration: "1m", target: 50 },
-    { duration: "2m", target: 100 },
-    { duration: "3m", target: 250 },
-    { duration: "3m", target: 500 },
-    { duration: "5m", target: 1000 },
+    { duration: "100s", target: 1000 },
+    { duration: "100s", target: 2000 },
+    { duration: "100s", target: 3000 },
+    { duration: "2m", target: 3000 },
   ],
 };
 
+const user = await open('csv/user.csv');
+const userRecords = await csv.parse(user, { delimiter: ',' });
+const chat = await open('csv/chat.csv');
+const chatRecords = await csv.parse(chat, { delimiter: ',' });
+const chatUser = await open('csv/chat_user.csv');
+const chatUserRecords = await csv.parse(chatUser, { delimiter: ',' });
+
+
 export default function() {
-  const url = "ws://localhost:8080/chat"
-  const user = "user";
+  const iteration = exec.vu.idInTest;
+  const url = "ws://192.168.1.101:8080/chat";
+  const user = `user${iteration}`;
   const password = "password";
   const sendMessageInterval = 1000
   const params = {
@@ -26,11 +36,13 @@ export default function() {
     }
   };
 
+  // console.log(user);
+
   const messageFactory = function() {
     return {
       type:"MESSAGE",
       eventId: crypto.randomUUID(),
-      chatId: "20d4e415-1919-46f2-b8ba-c426a37221a2",
+      chatId: chatRecords[iteration][0],
       content: "Load-testing message"
     }
   }
@@ -39,7 +51,7 @@ export default function() {
     socket.on("message", (message) => {
       const obj = JSON.parse(message);
 
-      console.log(`Got event with eventId:${obj.eventId}`)
+      // console.log(`Got event with eventId:${obj.eventId}`)
 
       check(obj, {
         'is not ERROR': o => o.type != "ERROR"
@@ -50,7 +62,7 @@ export default function() {
 
     socket.setInterval(() => {
       const message = messageFactory();
-      console.log(`Sending event with eventId:${message.eventId}`)
+      // console.log(`Sending event with eventId:${message.eventId}`)
       socket.send(JSON.stringify(message))
     }, sendMessageInterval)
   });
