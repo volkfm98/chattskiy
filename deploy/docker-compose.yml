@@ -3,24 +3,76 @@ services:
     image: postgres
     ports:
       - 5432:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
     env_file:
     - postgres.env
     - postgres.secret.env
+    volumes:
+      - ./postgres/Chattskiy_schema.sql:/docker-entrypoint-initdb.d/init.sql
   redis:
     image: redis
     ports:
       - 6379:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
   cassandra:
     image: cassandra
     ports:
       - 9042:9042
-    ports:
+    healthcheck:
+      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
+      interval: 15s
+      retries: 3
+      start_period: 10s
     volumes:
-      - ~/kui/config.yml:/etc/kafkaui/dynamic_config.yaml
+      - ./cassandra/messages_schema.cql:/docker-entrypoint-initdb.d/init.cql
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - 9090:9090
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - 3000:3000
+    volumes:
+      - ./grafana:/var/lib/grafana
+  k6:
+    image: grafana/k6
+    volumes:
+      - ./k6:/app
+  traefik:
+    image: traefik:v3.6
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
   app:
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
     build: ../
     env_file:
       - postgres.secret.env
       - app.env
-    ports:
-      - 8080:8080
+    expose:
+      - "8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chattskiy.rule=PathPrefix(`/`)"
+      - "traefik.http.services.chattskiy.loadbalancer.server.port=8080"
+      - "prometheus-job=app"

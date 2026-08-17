@@ -1,4 +1,7 @@
 -- public.chat definition
+CREATE DATABASE chattskiy;
+
+\c chattskiy
 
 CREATE TABLE IF NOT EXISTS public.chat (
                              id uuid NOT NULL,

@@ -1,5 +1,6 @@
 package ru.volkfm.chattskiy.handler;
 
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -12,6 +13,7 @@ import reactor.core.publisher.Mono;
 import reactor.util.context.Context;
 import ru.volkfm.chattskiy.config.ApplicationProperties;
 import ru.volkfm.chattskiy.handler.event.EventHandler;
+import ru.volkfm.chattskiy.metric.EventHandlingLatencyMeter;
 import ru.volkfm.chattskiy.model.event.ErrorEvent;
 import ru.volkfm.chattskiy.model.event.Event;
 import ru.volkfm.chattskiy.model.event.EventType;
@@ -42,6 +44,8 @@ public class WebSocketChatHandler implements WebSocketHandler {
 
     @Qualifier(BEAN_CHAT_WS_EVENT_HANDLER_MAP)
     private final Map<EventType, EventHandler> eventHandlerMap;
+
+    private final EventHandlingLatencyMeter eventHandlingLatencyMeter;
 
     @Override
     public Mono<Void> handle(WebSocketSession wsSession) {
@@ -128,6 +132,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
 
     protected Flux<Event> handleEvent(WebSocketMessage wsMsg, WebSocketSession wsSession, LocalSession userSession) {
         try {
+            Timer.Sample handlingLatencySample = eventHandlingLatencyMeter.createSample();
             Event event = getEventFromWsMessage(wsMsg);
 
             if (event instanceof PublishableEvent) {
@@ -141,7 +146,8 @@ public class WebSocketChatHandler implements WebSocketHandler {
                     .addKeyValue(OBJECT_KEY, event)
                     .log("Incoming event {} during session {} for user {}", event.getEventId().toString(), userSession.getSessionId(), userSession.getUserId().toString());
 
-            return delegateEventHandling(event);
+            return delegateEventHandling(event)
+                    .doOnComplete(() -> eventHandlingLatencyMeter.measure(handlingLatencySample, EventHandlingLatencyMeter.EventStage.INCOMING, event.getType()));
         } catch (JacksonException e) {
             return Flux.just(new ErrorEvent(null, "400", "Error happened during user data parsing"));
         }

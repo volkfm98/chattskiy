@@ -3,26 +3,12 @@ spring:
     allow-bean-definition-overriding: true
   application:
     name: Chattskiy
-  r2dbc:
-    username: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
-    url: ${POSTGRES_CONN_STRING}
-  cassandra:
-    keyspace-name: chattskiy
-    port: 9042
-    contact-points:
-      - ${CASSANDRA_CONTACT_POINT}
-    local-datacenter: datacenter1
-  data:
-    redis:
-      host: ${REDIS_HOST}
-
 app:
-  node-id: ${NODE_ID}
+  node-id: "1"
   redis:
-    ttl: 60s
+    ttl: 5s
     channels:
-      - "node:${app.node-id}"
+      - "node:1"
       - "broadcast"
 
 logging:
@@ -32,10 +18,12 @@ logging:
     ecs:
       service:
         node-name: ${app.node-id}
-        environment: Development
+        environment: Test
         version: 1.0.0-RC1
     format:
       file: ecs
+#  level:
+#    root: debug
 
 management:
   endpoint:
