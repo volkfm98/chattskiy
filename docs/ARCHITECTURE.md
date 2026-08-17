@@ -1,25 +1,26 @@
+# The goal
+
+So, our task is to make some backend of a [Telegram](https://telegram.org/)-like chat application.
+
+Such app should be:
+* usable across multiple regions
+* efficiently handle variable amounts of simultaneous user connections with quite big span
+* and yet still serve users with acceptable latency.
+
+In more engineering terms it should be:
+* distributed
+* horizontally scalable
+* responsive
+
 # Chattskiy Architecture
 
-## 0. Notes for myself
+## Concept
 
-Поймал себя на сысли, что гейтвей - не легкая история. Крч делаем пользователю домашний регион, где он зареган, например РУ.
-Когда пользователь подключается в DE регионе, он эксплицитно говорит свой регион при авторизации. Мы с этими данными идем и копируем из РУ региона к нам в ДЕ запись о нём, но в РУ регионе он вечный, а в ДЕ с ТТЛом.
-
-Делаем глобал лук ап таблицу юзер -> домашний регион.
-
-Если пользователь уехал в IT регион и делает ауф там, IT регион сначала пробует ауфнуть локально, потом делает лукап домашнего региона (DE) и стучится в DE регион.
-DE регион 1) делает ауф, и если всё чётко отдает данные юзера для кэша в IT регион. 2) Делает у себя в базе пометку, что у юзера есть активные сессии в IT регионе
-
-Если юзер из FR шлёт сообщение юзеру из DE, а тот в IT. Тогда в FR сначала делает штатный региональный паблишинг. Если какие-то юзеры не нашлись, делегируем отправку в GwNode.
-GwNode делает локальный лукап активных регионов пользователя. Нашел - хорошо, шлём им. Не нашел - фигово, глобал лукап домашнего региона, кэшим активные регионы из домашнего, шлём.
-
-# Architecture
-
-## Distributed
+### Distributed
 
 > [!Important]
-> For now multi-regional data exchange is not implemented at all. The whole "Distributed" section for now is only the concept
-> how it *should* work, explains all the tradeoffs and that it's possible and natural to evolve currently implemented part of Chattskiy app to provide multi-regional distribution.
+> For now multi-regional data exchange is not implemented at all. The whole "Distributed" and "Federal layer" sections for now are only the concept
+> how it *should* work, explains the tradeoffs and that it's possible and natural to evolve currently implemented part of Chattskiy app to provide multi-regional distribution.
 
 Suppose, we have a chat with a user in the USA and another user in Germany. Each of them should have access to
 chat history, ability to write messages and get notified about new messages in the chat.
@@ -49,7 +50,7 @@ Since all the regions are mostly independent and data is redundant, in case of s
 serve all the clients. Even the ones from the failed region, provided we redistribute them to neighbouring regions for the time of maintenance.
 Although not replicated regional data may be inaccessible and cached data in other regions may expire (require some additional handling in case of failure).
 
-## Horizontally scaled
+### Horizontally scaled
 
 Alright, we distributed Chattskiy around the globe. But how exactly are we going to handle variable and sometimes high loads?
 We could, of cource, introduce more regions, which means less users per region, but building new DCs every time is quite expensive.
@@ -67,7 +68,7 @@ Besides, as far as I know Redis has some problems with scaling, which makes it o
 Yet, although cross-node communication is a primary path of data processing, it's an optional optimization path.
 The mandatory part of data processing is only to get, validate and persist it. So in case of Redis failure UX will become worse, but the app still stays usable. (!ToDo: link to failure scenarios)
 
-## Responsive
+### Responsive
 
 Potentially we have to serve a lot of users simultaneously. Plus, we have to send data back and forth.
 There are many suitable transports and protocols reliable, fast enough and with full duplex,
@@ -77,11 +78,11 @@ Since we have a lot of simultaneous connections with lightweight processing, tra
 Luckily Netty and Spring WebFlux exist allowing us asynchronous connections processing, which allows us to handle much more connections per thread in reactive fashion.
 The only downside is higher complexity of development.
 
-## Visualizing and adding some details
+### Visualizing and adding some details
 
 Let's look at what we've discussed in one giant diagram and then split it into two smaller ones for better understanding.
 
-### One giant diagram
+#### One giant diagram
 ```mermaid
 graph LR;
     subgraph Region1
@@ -140,7 +141,7 @@ graph LR;
     R1FederalWorkers & R2FederalWorkers <--> GlobalRoutingDB;
 ```
 
-### Regional Layer
+#### Regional Layer
 
 ```mermaid
 graph LR
@@ -183,7 +184,13 @@ ChatNodes are responsible for handling users websocket sessions and propagation 
 
 GatewayNodes are responsible for handling cross-regional event handling and propagation (e.g. propagate MessageEvent to users from other regions).
 
-### Federal layer <a name="federal-layer"></a>
+Redis stores the distributed session-routing information and transports events between nodes.
+
+Cassandra stores durable chat data.
+
+And Postgres stores chat and user data (names, ids, etc.)
+
+##### Federal layer <a name="federal-layer"></a>
 
 ```mermaid
 graph LR;
@@ -242,273 +249,117 @@ GatewayNode then can ask home region of user for required data (like regions whe
 
 Then, knowing all the necessary routing data, GatewayNode can communicate only with interested regions, and to be more specific, to their GatewayNodes.
 
-## 1. Overview
+## Tech stack
 
-Chattskiy is a horizontally scalable WebSocket application.
+`Java`, `Spring Boot`, `Spring WebFlux`, `Project Reactor` - for node implementation<br>
+`Redis` - for routing and its `pub/sub` for communications<br>
+`Postgres`, `Cassandra` - as databases
 
-```text
-                     Client
-                       │
-                    WebSocket
-                       ▼
-                    Traefik
-                  /         \
-                 ▼           ▼
-          Chattskiy #1   Chattskiy #2
-                 \           /
-                  \         /
-                     Redis
-                       │
-                   Cassandra
+## ChatNode implementation details
+
+### Client connection
+When client connects, a regular HTTP connection is established during handshake phase, which then upgrades to a websocket connection.
+
+During the handshake phase ChatNode authorizes user and registers a new session in a [SessionRegistyService](../src/main/java/ru/volkfm/chattskiy/service/sessionregistry/SessionRegistryService.java)
+
+`SessionRegistryService` then registers our new session in two registries:
+* [LocalSessionRegistryService](../src/main/java/ru/volkfm/chattskiy/service/sessionregistry/LocalSessionRegistryService.java) - stores locally all the [sessions](../src/main/java/ru/volkfm/chattskiy/service/sessionregistry/LocalSession.java) handled by this ChatNode
+* [GlobalSessionRegistryService](../src/main/java/ru/volkfm/chattskiy/service/sessionregistry/GlobalSessionRegistryService.java) - provides access to regional session storage (Redis)
+
+Each session in `LocalSessionRegistryService` is represented by [LocalSession](../src/main/java/ru/volkfm/chattskiy/service/sessionregistry/LocalSession.java) object and contains a [Sink](https://projectreactor.io/docs/core/release/reference/coreFeatures/sinks.html) to sessions websocket connection.
+This allows us to talk back to user in a detached manner.
+
+`GlobalSessionRegistryService` stores a [hash](https://redis.io/docs/latest/develop/data-types/hashes/) for each user
+with key-value pairs of `sessionId -> serving ChatNodeId`. Each key-value pair has TTL to eliminate stale sessions.
+
+During the whole session ChatNode periodically sends PINGs to a client. Then a client has to send PONG back.
+When ChatNode resieves PONG, it renews session TTL via `SesssionRegistrySerivce` (which in turn delegates renewal to `GlovalSessionRegistryService`).
+
+Upon closing the connection, we try to unregister the session via `SessionRegistryService`.
+
+### Event handling
+
+I chose the whole system to be event driven. For now the only meaningful event type is MessageEvent, so let's study event processing pipeline on its example.
+
+Its typical event flow looks like this:
+
+#### Incoming event handling
+```mermaid
+  flowchart TD
+      client <---> |send websocket message| ChatWsHandler
+      
+      subgraph ChatNode 
+          ChatWsHandler ---> |delegate| MessageEventHandler;
+          MessageEventHandler ---> |return AckEvent| ChatWsHandler;
+          MessageEventHandler ---> |propagate event| EventPublishingService
+          EventPublishingService ---> |determine ChatNodes with active sessions| SessionRegistryService
+      end
+
+  MessageEventHandler ---> |persist message| Cassandra@{shape: database}
+  EventPublishingService ---> |determine chat participants| Postgres@{shape: database}
+  SessionRegistryService --> Redis@{shape: database}
+  EventPublishingService ---> |publish event via pub/sub| Redis@{shape: database}
 ```
 
-The actual WebSocket resources remain local to the JVM that owns them. Distributed state contains only routing information.
+1) Client sends a MessageEvent to ChatNode.
+2) `ChatWsHandler` handles received websocket message, deserializes it, identifies it as event and delegates event handling to a corresponding `EventHandler` (`MessageEventHandler` in our case).
+3) `MessageEventHandler` first of all validates and persists received message in Cassandra and returns AckEvent back to ChatWsHandler. 
+Then, as <u>optional optimization</u> propagates the event via EventPublishingService.  
+4) `ChatWsHandler` transforms AckEvent into websocket message and sends it back to client.
 
-## 2. WebSocket lifecycle
+> [!Note]
+> Event propagation for MessageEvent, although considered as main flow, still is treated as optional optimization.
+> The mandatory part is only persist message and return AckEvent.
+> In case of event propagation failure user still can retrieve messages from Cassandra via regular CRUD API (Not Implemented for simplicity reasons). 
 
-`ChatWsHandler`:
+3. 1. `EventPublishingService` gets the event to propagate, by its `ChatId` retrieves chat participants from Postgres DB and enriches the event with recipients list.
+   2. Knowing a list of event recipients (chat participants), it determines nodes, which handle these recipients sessions, via `SessionRegistryService`.
+   3. Then it sends the event to channels of interested nodes via Redis pub/sub
+   
+#### Outside event handling
+```mermaid
+  flowchart TD
+      client <---> |send websocket message| ChatWsHandler
+      
+      subgraph ChatNode 
+          EventListener <---> |delegate| EventHandler;
+          EventListener <---> |find destination sessions| SessionRegistryService;
+          EventListener ---> |send event to determined session| ChatWsHandler;
+      end
 
-1. obtains the authenticated user ID from the handshake;
-2. registers the session;
-3. creates the incoming event pipeline;
-4. subscribes the outgoing WebSocket to the local session sink;
-5. merges outgoing events with protocol/control messages;
-6. unregisters the session when it terminates.
-
-Conceptually:
-
-```text
-session.receive()
-      │
-      ▼
-parse Event
-      │
-      ▼
-EventHandler
-      │
-      ▼
-publish
-
-local session sink
-      │
-      ▼
-session.send()
+  Redis@{shape: database} --> |subscribe on events via pub/sub| EventListener;
 ```
 
-## 3. Local session registry
+On the receiving side of ChatNode is `EventListener` listening ChatNodes personal channel for outside events.
 
-The local registry is conceptually:
+When it gets an event, it
 
-```text
-Map<UserId, Map<SessionId, LocalSession>>
-```
+1) Optionally delegates event handling to corresponding `EventHandler`.
+2) Retrieves active sessions of event recipients from SessionRegistry.
+3) For each retrieved session, emits a copy of event to session `Sink`.
 
-`LocalSession` owns the JVM-local WebSocket sink.
+That `Sink` on the other side is connected to "outside events" pipeline in `ChatWsHandler`.
+`ChatWsHandler` transforms this event into websocket message and sends it to a client.
 
-Multiple sessions for one user are supported, for example a browser and a mobile client.
-
-## 4. Global session registry
-
-The global Redis-backed registry records which application nodes currently have active sessions for a user:
-
-```text
-user A → node-1
-user A → node-2
-user B → node-2
-```
-
-It never stores WebSocket objects.
-
-Entries use TTLs. Connected sessions renew their TTL periodically. This avoids permanently retaining state for nodes that disappear unexpectedly.
-
-A real debugging incident during development demonstrated why renewal is essential: expired registry entries caused event routing to find no active subscriptions even though the Redis listener itself remained healthy.
-
-## 5. Event publishing
-
-The publishing pipeline is approximately:
-
-```text
-PublishableEvent
-      │
-      ▼
-chat participants
-      │
-      ▼
-active nodes
-      │
-      ▼
-distinct node IDs
-      │
-      ▼
-Redis PUBLISH
-```
-
-The publisher does not directly access another node's WebSocket sessions.
-
-## 6. Event listening
-
-Each node subscribes to its relevant Redis channels:
-
-```text
-Redis Pub/Sub
-      │
-      ▼
-ReactiveSubscription.Message
-      │
-      ▼
-JSON deserialization
-      │
-      ▼
-PublishableEvent
-      │
-      ▼
-event processing
-      │
-      ▼
-local session lookup
-      │
-      ▼
-session sink
-```
-
-The listener is independent of any single WebSocket lifecycle.
-
-## 7. Reactor Sinks
-
-A local session sink bridges the independent Redis listener and WebSocket pipelines:
-
-```text
-Redis listener
-      │
-      │ emitNext()
-      ▼
-session sink
-      │
-      │ asFlux()
-      ▼
-WebSocket send()
-```
-
-This decoupling allows the Redis listener to remain continuously active while individual WebSocket sessions come and go.
-
-The trade-off is backpressure behavior. If downstream consumption cannot keep up, the sink can report overflow. This was observed during single-node load testing around 2,600 VUs.
-
-## 8. Redis
-
-Redis provides:
-
-1. ephemeral distributed session coordination;
-2. inter-node Pub/Sub.
-
-These have different semantics.
-
-The registry is temporary state that can expire and be rebuilt. Pub/Sub messages are transient and are not replayable after subscriber loss.
-
-## 9. Cassandra
-
-Cassandra stores durable application data and is intentionally separate from live session routing.
-
-This keeps the real-time path from requiring persistent storage for every session lookup.
-
-Cassandra resource usage must still be considered during local load testing because it competes for the same physical machine resources as the application and other infrastructure.
-
-## 10. Horizontal scaling
-
-New nodes can accept WebSocket connections independently.
-
-```text
-                    Redis
-                 /         \
-                ▼           ▼
-        node #1 registry   node #2 registry
-              │                 │
-              ▼                 ▼
-        local sessions    local sessions
-```
-
-A message received by node 1 can therefore reach a user whose WebSocket is owned by node 2.
-
-## 11. Example cross-node message
-
-Alice is connected to node 1 and Bob to node 2:
-
-```text
-Alice
-  │ MESSAGE
-  ▼
-Node 1
-  │
-  ├─ determine participants
-  ├─ determine active nodes
-  └─ Redis PUBLISH ─────► Node 2
-                           │
-                           ▼
-                      EventListener
-                           │
-                           ▼
-                      Bob's sink
-                           │
-                           ▼
-                          Bob
-```
-
-## 12. Failure behavior
+# Failure behavior
 
 ### Node failure
 
 Local sessions disappear with the JVM. Global session entries eventually expire. Clients must reconnect.
+But the application is still stable.
 
 ### Redis failure
 
-Inter-node event propagation and global session discovery are affected. Pub/Sub does not provide replay.
+Cross-node event propagation and global session discovery are affected. Pub/Sub does not provide replay.
+Clients can't receive events in real-time and must instead periodically do manual sync via some Cassandra CRUD API.
+
+UX gets worse, but the application is still in usable state.
+
+### Postgres / Cassandra failure
+
+No access to regional data. Praying and counting on replica-nodes.
+Otherwise, the whole region is in a failed state and requires maintenance.
 
 ### Client disconnect
 
 Normal cleanup removes the session. TTL provides a fallback for cases where cleanup cannot execute.
-
-## 13. Why WebFlux?
-
-The workload contains many long-lived WebSocket connections. Reactive I/O is a natural fit because the application can maintain many connections without requiring a permanently blocked thread per connection.
-
-The reactive programming model also integrates naturally with reactive Redis and other non-blocking resources.
-
-## 14. Why Redis Pub/Sub?
-
-The requirement is lightweight inter-node event propagation, not durable event streaming.
-
-Pub/Sub is simple and low-overhead, at the cost of persistence, replay, consumer offsets, and durable delivery guarantees.
-
-## 15. Why local + global registries?
-
-A WebSocket session is a process-local resource. Redis cannot own it.
-
-The global registry therefore stores only enough information to route an event to the nodes that own relevant sessions.
-
-## 16. Why TTL?
-
-Session presence is temporary and process failure can prevent cleanup.
-
-TTL turns stale distributed state into eventually self-cleaning state.
-
-## 17. Observability
-
-Micrometer timers measure three application boundaries:
-
-```text
-incoming
-  └─ handler delegation → handler completion
-
-publishing
-  └─ publish() → publishing pipeline completion
-
-outside
-  └─ external event listener → local session sink emission
-```
-
-Prometheus collects the metrics and Grafana visualizes them.
-
-## 18. Future evolution
-
-If stronger delivery guarantees become necessary, Redis Pub/Sub could be replaced or supplemented by Redis Streams, Kafka, or another durable messaging system.
-
-Production deployment would also require HA Redis/Cassandra rather than the single-instance development topology.
