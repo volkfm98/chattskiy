@@ -1,0 +1,47 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  application:
+    name: Chattskiy
+  r2dbc:
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    url: ${POSTGRES_CONN_STRING}
+  cassandra:
+    keyspace-name: chattskiy
+    port: 9042
+    contact-points:
+      - ${CASSANDRA_CONTACT_POINT}
+    local-datacenter: datacenter1
+  data:
+    redis:
+      host: ${REDIS_HOST}
+
+app:
+  node-id: ${NODE_ID}
+  redis:
+    ttl: 60s
+    channels:
+      - "node:${app.node-id}"
+      - "broadcast"
+
+logging:
+  file:
+    name: ./logs/chat_node.log
+  structured:
+    ecs:
+      service:
+        node-name: ${app.node-id}
+        environment: Development
+        version: 1.0.0-RC1
+    format:
+      file: ecs
+
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
