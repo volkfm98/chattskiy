@@ -4,7 +4,7 @@ Chattskiy is a distributed reactive chat backend built with Java and Spring WebF
 
 The project explores the engineering problems behind a horizontally scalable, high-loaded chat backend:
 handling big numbers of simultaneous connections, reactive event processing, distributed session
-management, inter-node event propagation, persistence, observability, and load testing.
+management, cross-node event propagation, persistence, observability, and load testing.
 
 # Why is Chattskiy?
 
@@ -34,7 +34,13 @@ In more engineering terms it should be:
 > [!Note]
 > This chapter contains only a big picture of architecture description. For more detailed architecture description and reasoning behind it see [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
-## Diagrams
+## Tech stack
+
+`Java`, `Spring Boot`, `Spring WebFlux`, `Project Reactor` - for node implementation<br>
+`Redis` - for routing and its `pub/sub` for communications<br>
+`Postgres`, `Cassandra` - as databases
+
+## Big picture
 
 ### One giant diagram
 
@@ -198,105 +204,28 @@ GatewayNode then can ask home region of user for required data (like regions whe
 
 Then, knowing all the necessary routing data, GatewayNode can communicate only with interested regions, and to be more specific, to their GatewayNodes.
 
-## Current benchmark
+# Observability
 
-**3,000 concurrent WebSocket users across two application nodes, ~2,000 client-originated messages/sec and ~4,000 WebSocket messages/sec**, on a Ryzen 5 3600 / 16 GB RAM development machine.
-
-## Architecture
-
-```text
-Client
-  │ WebSocket
-  ▼
-Traefik
-  ├───────────────┐
-  ▼               ▼
-Chattskiy #1   Chattskiy #2
-  │               │
-  └────── Redis ──┘
-          │
-       Cassandra
-```
-
-Each application node owns the actual WebSocket sessions connected to it. Redis stores the distributed session-routing information and transports events between nodes. Cassandra stores durable chat data.
-
-## Event flow
-
-```text
-Client
-  │
-  ▼
-ChatWsHandler
-  │
-  ▼
-EventHandler
-  │
-  ▼
-EventPublishingService
-  │
-  ├─ determine chat participants
-  ├─ determine nodes with active sessions
-  └─ Redis Pub/Sub
-          │
-          ▼
-  EventListeningService
-          │
-          ▼
-     EventListener
-          │
-          ▼
-    local session sink
-          │
-          ▼
-      WebSocket
-```
-
-## Session management
-
-The local registry owns actual WebSocket session objects:
-
-```text
-userId → sessionId → LocalSession → WebSocket sink
-```
-
-A user may have multiple sessions.
-
-The global Redis-backed registry answers which application nodes currently have sessions for a user. It uses TTLs so stale state eventually disappears if a node or session stops renewing it.
-
-## Redis
-
-Redis has two separate responsibilities:
-
-- ephemeral global session registry / coordination;
-- Pub/Sub event propagation between application nodes.
-
-Redis Pub/Sub is intentionally transient. It is not a durable event log and does not provide replay.
-
-## Reactive stack
-
-Chattskiy uses Spring WebFlux and Project Reactor for WebSocket I/O, Redis access, and event-processing pipelines.
-
-Reactor `Sinks` bridge the detached event-listening pipeline with individual WebSocket sending pipelines.
-
-## Persistence
-
-Cassandra stores durable chat-related data. Transient session-routing state and inter-node event propagation remain in Redis.
-
-## Observability
-
+## Metrics
 Spring Boot Actuator and Micrometer expose metrics. Prometheus collects them and Grafana visualizes them.
 
 Custom histogram timers measure:
 
-- **incoming**: event delegation until handler completion;
+- **incoming**: event handling from receiving from client to publishing (a.k.a. event propagation);
 - **publishing**: complete event publishing pipeline;
-- **outside**: external event processing until emission to a local session sink.
+- **outside**: outside (propagated from other node) event processing until emission to a local session sink.
 
 The timers are tagged by event type.
 
+## Logging
 Structured logging uses Spring's ECS logging support.
 
-## Testing
+# Tests
+
+Since the architecture is live and changes continuously, covering the whole project with tests would be wasteful and very time-consuming.
+
+Yet, I wanted to show, I'm familiar with tests, and I can write them.
+So I covered only the `ru.volkfm.chattskiy.service.sessionregistry` package + some load testing.
 
 The project contains:
 
@@ -307,64 +236,16 @@ The project contains:
 - concurrency-sensitive session TTL tests;
 - k6 WebSocket load tests.
 
-## Load testing
+## Current benchmark
 
-The main scenario models realistic private chats:
+3,000 concurrent WebSocket users across two application nodes, ~2,000 client-originated messages/sec and ~4,000 WebSocket messages/sec, on a Ryzen 5 3600 / 16 GB RAM development machine.
 
-- one VU = one unique user;
-- at most one WebSocket session per VU;
-- each user belongs to exactly one private chat;
-- each private chat contains two users.
-
-Therefore 3,000 VUs represent approximately 3,000 users, 3,000 WebSocket sessions, and 1,500 independent private chats.
-
-### Two-node result
-
-| Metric | Result |
-|---|---:|
-| Application nodes | 2 |
-| Concurrent users | 3,000 |
-| WebSocket sessions | 3,000 |
-| Private chats | ~1,500 |
-| Client messages/sec | ~2,000 |
-| WebSocket messages/sec | ~4,000 |
-| Incoming p95 | ~10 ms |
-| Publishing p95 | ~24 ms |
-| Outside p95 | ~1 ms |
-| k6 checks | 1,797,091 |
-| Failed checks | 1 |
-
-The benchmark host was a Ryzen 5 3600 with 16 GB DDR4 running Windows 11 Pro. Docker/WSL was allocated approximately 12 GB RAM and 12 logical processors. The k6 load generator ran on a separate LAN machine.
-
-### Single-node observation
-
-A single-node run reached approximately 2,600 VUs before a session sink began reporting overflow. This is treated as a useful capacity signal rather than simply a test failure.
+> [!Note]
+> See more in [LOAD_TESTING.md](docs/LOAD_TESTING.md)
 
 ## Known limitations
 
 - Redis Pub/Sub provides no durable delivery or replay.
 - Session routing depends on TTL renewal.
-- Basic Authentication is currently used for WebSocket authentication.
-- The load test uses a single physical host for infrastructure.
 - Cassandra and Redis are development-grade single-instance infrastructure in the local topology.
 - Offline-message semantics and strong delivery guarantees are intentionally limited.
-
-## Possible future work
-
-- JWT/OAuth2 authentication;
-- durable event delivery/replay;
-- offline messages;
-- stronger delivery acknowledgements;
-- distributed tracing;
-- failure-injection testing;
-- Kubernetes deployment;
-- production HA Redis/Cassandra;
-- larger multi-node benchmarks.
-
-## Project purpose
-
-Chattskiy is intentionally small enough to understand end-to-end while still exposing real distributed-systems concerns.
-
-Its main engineering areas are:
-
-**Reactive WebSockets + distributed session state + inter-node messaging + persistence + observability + testing + performance engineering.**
