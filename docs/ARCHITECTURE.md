@@ -59,14 +59,14 @@ That's where the ability to scale Chattskiy horizontally in just one DC comes ha
 
 But then again, suppose, user1 is connected to node1 and user2 to node2, both are in the same chat. Then instances should be able to coordinate with other instances. Meaning, we have to introduce some means of cross-node communication.
 
-Chattskiy is built in a modular fashion, so we could fairly easy swap cross-node communication implementation,
-but currently Chattskiy uses Redis pub/sub for cross-node data exchange and Redis hashes for routing (!ToDo: link to registries).
+Chattskiy is built in modular fashion, so we could fairly easy swap cross-node communication implementation,
+but currently Chattskiy uses Redis pub/sub for cross-node data exchange and Redis hashes for routing (see [GlobalSessionRegistryService](#client-connection)).
 Redis pub/sub is chosen because of its simplicity, low overhead and easy integration in the rest of the tech stack.
 Yet, it lacks some handy functionality like data durability and replayability.
 
 Besides, as far as I know Redis has some problems with scaling, which makes it one big potential bottleneck and point of failure.
 Yet, although cross-node communication is a primary path of data processing, it's an optional optimization path.
-The mandatory part of data processing is only to get, validate and persist it. So in case of Redis failure UX will become worse, but the app still stays usable. (!ToDo: link to failure scenarios)
+The mandatory part of data processing is only to get, validate and persist it. So in case of Redis failure UX will become worse, but the app still stays usable. (see [Failure behaviour](#failure-behavior))
 
 ### Responsive
 

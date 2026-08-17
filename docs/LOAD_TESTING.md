@@ -1,5 +1,3 @@
-[TOC]
-
 # Chattskiy Load Testing
 
 ## Test
